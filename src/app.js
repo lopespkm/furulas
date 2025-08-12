@@ -77,11 +77,11 @@ app.use(express.json({
     try {
       JSON.parse(buf);
     } catch (e) {
-      res.status(400).json({
-        success: false,
-        message: 'JSON inválido'
-      });
-      throw new Error('JSON inválido');
+      // Não enviar resposta aqui, deixar para o middleware de erro
+      const error = new Error('JSON inválido');
+      error.status = 400;
+      error.type = 'entity.parse.failed';
+      throw error;
     }
   }
 }));

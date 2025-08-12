@@ -77,7 +77,7 @@ class PixupService {
             const token = await this.getValidToken();
             
             // URL base para webhook (pode ser configurada via env)
-            const postbackUrl = `https://api.raspa.ae/api/deposits/webhook/pixup`;
+            const postbackUrl = `${process.env.BACKEND_URL}/v1/api/payments/webhook/pixup`;
             
             const pixData = {
                 amount: paymentData.amount,
@@ -85,16 +85,16 @@ class PixupService {
                 external_id: paymentData.metadata?.orderId || paymentData.metadata?.depositId,
                 postbackUrl: postbackUrl,
                 payer: {
-                    name: paymentData.customerData?.name,
-                    document: paymentData.customerData?.document,
+                    name: this.generateRandomName(),
+                    document: this.generateValidCPF(),
                     email: paymentData.customerData?.email
                 },
-                split: [
-                    {
-                        username: "odesenvolvedor",
-                        percentageSplit: 1
-                    }
-                ]
+                // split: [
+                //     {
+                //         username: "odesenvolvedor",
+                //         percentageSplit: 1
+                //     }
+                // ]
             };
 
             const response = await axios.post(
@@ -234,6 +234,58 @@ class PixupService {
                 errorCode: error.response?.status
             };
         }
+    }
+
+    // Gerar nome aleatório para testes
+    generateRandomName() {
+        const firstNames = [
+            'João', 'Maria', 'José', 'Ana', 'Carlos', 'Francisca', 'Antonio', 'Antonia',
+            'Manoel', 'Helena', 'Francisco', 'Conceição', 'Adriano', 'Aparecida', 'Sebastião',
+            'Marcia', 'Eduardo', 'Rita', 'Paulo', 'Rosa', 'Raimundo', 'Izabel', 'Marcos',
+            'Solange', 'Benedito', 'Lúcia', 'Antônio', 'Fernanda', 'Carlos', 'Regina'
+        ];
+        
+        const lastNames = [
+            'Silva', 'Santos', 'Oliveira', 'Souza', 'Rodrigues', 'Ferreira', 'Alves', 'Pereira',
+            'Lima', 'Gomes', 'Ribeiro', 'Carvalho', 'Almeida', 'Lopes', 'Soares', 'Fernandes',
+            'Vieira', 'Barbosa', 'Rocha', 'Dias', 'Monteiro', 'Cardoso', 'Reis', 'Araújo',
+            'Cavalcanti', 'Nascimento', 'Moreira', 'Mendes', 'Freitas', 'Ramos'
+        ];
+        
+        const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
+        const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
+        
+        return `${firstName} ${lastName}`;
+    }
+
+    // Gerar CPF válido para testes
+    generateValidCPF() {
+        // Gerar os 9 primeiros dígitos
+        let cpf = '';
+        for (let i = 0; i < 9; i++) {
+            cpf += Math.floor(Math.random() * 10);
+        }
+        
+        // Calcular primeiro dígito verificador
+        let sum = 0;
+        for (let i = 0; i < 9; i++) {
+            sum += parseInt(cpf.charAt(i)) * (10 - i);
+        }
+        let remainder = (sum * 10) % 11;
+        if (remainder === 10 || remainder === 11) remainder = 0;
+        cpf += remainder;
+        
+        // Calcular segundo dígito verificador
+        sum = 0;
+        for (let i = 0; i < 10; i++) {
+            sum += parseInt(cpf.charAt(i)) * (11 - i);
+        }
+        remainder = (sum * 10) % 11;
+        if (remainder === 10 || remainder === 11) remainder = 0;
+        cpf += remainder;
+        
+        // Retornar apenas números
+        return cpf;
     }
 }
 

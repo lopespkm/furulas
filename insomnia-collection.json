@@ -1001,12 +1001,69 @@
       "modified": 1736896800000,
       "created": 1736896800000,
       "name": "Criar Raspadinha",
-      "description": "Criar nova raspadinha com múltiplos prêmios usando URLs de imagens",
+      "description": "Criar nova raspadinha com múltiplos prêmios e upload de imagens para o Supabase",
       "url": "{{ _.base_url }}/v1/api/scratchcards/admin/create",
       "method": "POST",
       "body": {
+        "mimeType": "multipart/form-data",
+        "params": [
+          {
+            "name": "scratchCard",
+            "type": "text",
+            "value": "{\n  \"name\": \"Raspadinha Premium\",\n  \"description\": \"Uma raspadinha com prêmios incríveis!\",\n  \"price\": 10.00,\n  \"target_rtp\": 85.0,\n  \"is_active\": true\n}"
+          },
+          {
+            "name": "prizes",
+            "type": "text",
+            "value": "[\n  {\n    \"name\": \"R$ 100,00\",\n    \"description\": \"Prêmio em dinheiro\",\n    \"type\": \"MONEY\",\n    \"value\": 100.00,\n    \"probability\": 5.0\n  },\n  {\n    \"name\": \"iPhone 15\",\n    \"description\": \"Smartphone Apple\",\n    \"type\": \"PRODUCT\",\n    \"product_name\": \"iPhone 15 128GB\",\n    \"redemption_value\": 500.00,\n    \"probability\": 1.0\n  },\n  {\n    \"name\": \"R$ 50,00\",\n    \"description\": \"Prêmio menor em dinheiro\",\n    \"type\": \"MONEY\",\n    \"value\": 50.00,\n    \"probability\": 15.0\n  }\n]"
+          },
+          {
+            "name": "scratchcard_image",
+            "type": "file",
+            "fileName": "raspadinha-premium.jpg"
+          },
+          {
+            "name": "prize_images",
+            "type": "file",
+            "fileName": "premio-100.jpg"
+          },
+          {
+            "name": "prize_images",
+            "type": "file",
+            "fileName": "iphone15.jpg"
+          },
+          {
+            "name": "prize_images",
+            "type": "file",
+            "fileName": "premio-50.jpg"
+          }
+        ]
+      },
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1705276188000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_admin_create_scratchcard_json",
+      "parentId": "fld_scratchcards_admin",
+      "modified": 1736896800000,
+      "created": 1736896800000,
+      "name": "Criar Raspadinha (JSON)",
+      "description": "Criar nova raspadinha apenas com JSON (sem upload de imagens)",
+      "url": "{{ _.base_url }}/v1/api/scratchcards/admin/create-json",
+      "method": "POST",
+      "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"name\": \"Raspadinha Premium\",\n  \"description\": \"Uma raspadinha com prêmios incríveis!\",\n  \"price\": 10.00,\n  \"target_rtp\": 85.0,\n  \"is_active\": true,\n  \"image_url\": \"https://example.com/images/raspadinha-premium.jpg\",\n  \"prizes\": [\n    {\n      \"name\": \"R$ 100,00\",\n      \"description\": \"Prêmio em dinheiro\",\n      \"type\": \"MONEY\",\n      \"value\": 100.00,\n      \"probability\": 5.0,\n      \"image_url\": \"https://example.com/images/money-prize.jpg\"\n    },\n    {\n      \"name\": \"iPhone 15\",\n      \"description\": \"Smartphone Apple\",\n      \"type\": \"PRODUCT\",\n      \"product_name\": \"iPhone 15 128GB\",\n      \"redemption_value\": 500.00,\n      \"probability\": 1.0,\n      \"image_url\": \"https://example.com/images/iphone15.jpg\"\n    }\n  ]\n}"
+        "text": "{\n  \"scratchCard\": {\n    \"name\": \"Raspadinha Premium\",\n    \"description\": \"Uma raspadinha com prêmios incríveis!\",\n    \"price\": 10.00,\n    \"target_rtp\": 85.0,\n    \"is_active\": true\n  },\n  \"prizes\": [\n    {\n      \"name\": \"R$ 100,00\",\n      \"description\": \"Prêmio em dinheiro\",\n      \"type\": \"MONEY\",\n      \"value\": 100.00,\n      \"probability\": 5.0\n    },\n    {\n      \"name\": \"iPhone 15\",\n      \"description\": \"Smartphone Apple\",\n      \"type\": \"PRODUCT\",\n      \"product_name\": \"iPhone 15 128GB\",\n      \"redemption_value\": 500.00,\n      \"probability\": 1.0\n    }\n  ]\n}"
       },
       "parameters": [],
       "headers": [
@@ -1016,7 +1073,7 @@
         }
       ],
       "authentication": {},
-      "metaSortKey": -1705276188000,
+      "metaSortKey": -1705276187500,
       "isPrivate": false,
       "settingStoreCookies": true,
       "settingSendCookies": true,
@@ -1047,7 +1104,7 @@
         }
       ],
       "authentication": {},
-      "metaSortKey": -1705276187500,
+      "metaSortKey": -1705276186500,
       "isPrivate": false,
       "settingStoreCookies": true,
       "settingSendCookies": true,
@@ -1070,7 +1127,7 @@
       "parameters": [],
       "headers": [],
       "authentication": {},
-      "metaSortKey": -1705276187000,
+      "metaSortKey": -1705276185500,
       "isPrivate": false,
       "settingStoreCookies": true,
       "settingSendCookies": true,
@@ -1101,7 +1158,7 @@
         }
       ],
       "authentication": {},
-      "metaSortKey": -1705276186500,
+      "metaSortKey": -1705276184500,
       "isPrivate": false,
       "settingStoreCookies": true,
       "settingSendCookies": true,

@@ -36,14 +36,24 @@ class UploadMiddleware {
     
     // Filtro de tipos de arquivo
     this.fileFilter = (req, file, cb) => {
+      // Log para debug
+      console.log('🔍 Verificando arquivo:', {
+        fieldname: file.fieldname,
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size
+      });
+      
       // Tipos de arquivo permitidos
       const allowedTypes = /jpeg|jpg|png|gif|svg|webp/;
       const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
       const mimetype = allowedTypes.test(file.mimetype);
       
       if (mimetype && extname) {
+        console.log('✅ Arquivo aceito:', file.originalname);
         return cb(null, true);
       } else {
+        console.log('❌ Arquivo rejeitado:', file.originalname, 'Mimetype:', file.mimetype, 'Extensão:', path.extname(file.originalname));
         cb(new Error('Apenas arquivos de imagem são permitidos (JPEG, JPG, PNG, GIF, SVG, WEBP)'));
       }
     };
@@ -52,8 +62,18 @@ class UploadMiddleware {
     this.upload = multer({
       storage: this.storage,
       limits: {
-        fileSize: 5 * 1024 * 1024, // 5MB máximo
-        files: 5 // máximo 5 arquivos por vez
+        fileSize: 10 * 1024 * 1024, // 10MB máximo
+        files: 20 // máximo 20 arquivos por vez
+      },
+      fileFilter: this.fileFilter
+    });
+    
+    // Configuração específica para fields
+    this.fieldsUpload = multer({
+      storage: this.storage,
+      limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB máximo
+        files: 20 // máximo 20 arquivos por vez
       },
       fileFilter: this.fileFilter
     });
@@ -65,6 +85,7 @@ class UploadMiddleware {
    * @returns {Function} Middleware do multer
    */
   single(fieldName = 'image') {
+    console.log('📁 Configurando upload single para campo:', fieldName);
     return this.upload.single(fieldName);
   }
   
@@ -75,6 +96,7 @@ class UploadMiddleware {
    * @returns {Function} Middleware do multer
    */
   array(fieldName = 'images', maxCount = 9) {
+    console.log('📁 Configurando upload array para campo:', fieldName, 'maxCount:', maxCount);
     return this.upload.array(fieldName, maxCount);
   }
   
@@ -84,7 +106,48 @@ class UploadMiddleware {
    * @returns {Function} Middleware do multer
    */
   fields(fields) {
-    return this.upload.fields(fields);
+    console.log('📁 Configurando upload fields:', fields);
+    return this.fieldsUpload.fields(fields);
+  }
+  
+  /**
+   * Middleware para upload de campos múltiplos com suporte a campos duplicados
+   * @param {Array} fields - Array de objetos com name e maxCount
+   * @returns {Function} Middleware do multer
+   */
+  fieldsWithDuplicates(fields) {
+    console.log('📁 Configurando upload fields com suporte a duplicados:', fields);
+    
+    // Criar configuração que aceita campos duplicados
+    const uploadConfig = multer({
+      storage: this.storage,
+      limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB máximo
+        files: 20 // máximo 20 arquivos por vez
+      },
+      fileFilter: this.fileFilter
+    }).any(); // Usar .any() para aceitar qualquer campo
+    
+    return (req, res, next) => {
+      uploadConfig(req, res, (err) => {
+        if (err) {
+          return next(err);
+        }
+        
+        // Organizar arquivos por campo esperado
+        if (req.files && req.files.length > 0) {
+          req.files = req.files.reduce((acc, file) => {
+            if (!acc[file.fieldname]) {
+              acc[file.fieldname] = [];
+            }
+            acc[file.fieldname].push(file);
+            return acc;
+          }, {});
+        }
+        
+        next();
+      });
+    };
   }
   
   /**
@@ -95,22 +158,37 @@ class UploadMiddleware {
    * @param {Function} next - Next function
    */
   handleError(error, req, res, next) {
+    console.log('🚨 Erro no upload:', error);
+    
     if (error instanceof multer.MulterError) {
+      console.log('🚨 Erro Multer:', error.code, error.message);
+      
       switch (error.code) {
         case 'LIMIT_FILE_SIZE':
           return res.status(400).json({
             success: false,
-            message: 'Arquivo muito grande. Tamanho máximo: 5MB'
+            message: 'Arquivo muito grande. Tamanho máximo: 10MB'
           });
         case 'LIMIT_FILE_COUNT':
           return res.status(400).json({
             success: false,
-            message: 'Muitos arquivos. Máximo permitido: 5 arquivos'
+            message: 'Muitos arquivos. Máximo permitido: 20 arquivos'
           });
         case 'LIMIT_UNEXPECTED_FILE':
+          console.log('🚨 Campo inesperado:', error.field);
+          let expectedFields = [];
+          try {
+            expectedFields = this.getExpectedFields(req);
+          } catch (e) {
+            console.log('Erro ao obter campos esperados:', e);
+            expectedFields = ['scratchcard_image', 'prize_images'];
+          }
           return res.status(400).json({
             success: false,
-            message: 'Campo de arquivo inesperado'
+            message: `Campo de arquivo inesperado: "${error.field}". Verifique se o nome do campo está correto.`,
+            expected_fields: expectedFields,
+            received_field: error.field,
+            tip: 'Para múltiplos arquivos, use o campo "prize_images" (plural) e envie todos os arquivos com o mesmo nome de campo'
           });
         default:
           return res.status(400).json({
@@ -128,6 +206,20 @@ class UploadMiddleware {
     }
     
     next(error);
+  }
+  
+  /**
+   * Obter campos esperados baseado na rota
+   * @param {Object} req - Request object
+   * @returns {Array} Array com os campos esperados
+   */
+  getExpectedFields(req) {
+    if (req.route.path.includes('/upload-image') || req.route.path.includes('/upload-prize-image')) {
+      return ['image'];
+    } else if (req.route.path.includes('/admin/create')) {
+      return ['scratchcard_image', 'prize_images'];
+    }
+    return [];
   }
   
   /**

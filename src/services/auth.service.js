@@ -49,8 +49,8 @@ class AuthService {
         }
       }
 
-      // Gerar username único baseado no full_name
-      const username = await this.generateUniqueUsername(full_name);
+      // Gerar username único baseado no full_name ou email
+      const username = await this.generateUniqueUsername(full_name || email);
 
       // Validar código de convite se fornecido
       let inviterUserId = null;
@@ -164,12 +164,18 @@ class AuthService {
       const { identifier, password } = credentials;
 
       // Buscar usuário por email ou telefone
+      const whereConditions = [{ email: identifier }];
+      if (identifier.includes('@')) {
+        // Se contém @, é email
+        whereConditions.push({ email: identifier });
+      } else {
+        // Se não contém @, pode ser telefone
+        whereConditions.push({ phone: identifier });
+      }
+      
       const user = await prisma.user.findFirst({
         where: {
-          OR: [
-            { email: identifier },
-            { phone: identifier }
-          ],
+          OR: whereConditions,
           deleted_at: null
         },
         include: {
@@ -389,34 +395,36 @@ class AuthService {
    * @returns {Object} Resultado da validação
    */
   validatePassword(password) {
-    const minLength = 8;
+    const minLength = 4;
     const hasUpperCase = /[A-Z]/.test(password);
     const hasLowerCase = /[a-z]/.test(password);
     const hasNumbers = /\d/.test(password);
     const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
 
-    const isValid = password.length >= minLength && hasUpperCase && hasLowerCase && hasNumbers;
+    const isValid = password.length >= minLength;
 
     return {
       isValid,
       requirements: {
         minLength: password.length >= minLength,
-        hasUpperCase,
-        hasLowerCase,
-        hasNumbers,
-        hasSpecialChar
       }
     };
   }
 
   /**
-   * Gera um username único baseado no full_name
-   * @param {string} fullName - Nome completo do usuário
+   * Gera um username único baseado no full_name ou email
+   * @param {string} nameOrEmail - Nome completo do usuário ou email
    * @returns {string} Username único
    */
-  async generateUniqueUsername(fullName) {
+  async generateUniqueUsername(nameOrEmail) {
+    // Se for email, usar a parte antes do @
+    let baseName = nameOrEmail;
+    if (nameOrEmail.includes('@')) {
+      baseName = nameOrEmail.split('@')[0];
+    }
+    
     // Normalizar o nome: remover acentos, espaços e caracteres especiais
-    let baseUsername = fullName
+    let baseUsername = baseName
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '') // Remove acentos

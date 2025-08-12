@@ -1,7 +1,13 @@
 const { PrismaClient } = require('../generated/prisma');
+const { createClient } = require('@supabase/supabase-js');
 const prisma = new PrismaClient();
 const LicenseService = require('./license.service');
 const licenseService = new LicenseService();
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+);
 
 class ScratchCardService {
   // Listar todas as raspadinhas ativas
@@ -276,10 +282,8 @@ class ScratchCardService {
     }
   }
 
-  // Determinar resultado do jogo baseado nas probabilidades e RTP
+  // Determinar resultado do jogo: usuário comum sempre perde, influenciador ganha mais
   determineGameResult(scratchCard, user = null) {
-    const currentRtp = Number(scratchCard.current_rtp);
-    const targetRtp = Number(scratchCard.target_rtp);
     const prizes = scratchCard.prizes;
 
     // Se não há prêmios, sempre perde
@@ -287,38 +291,39 @@ class ScratchCardService {
       return { isWinner: false, prize: null };
     }
 
-    // Ajustar probabilidades baseado no RTP atual vs target
-    let rtpMultiplier = 1;
-    if (currentRtp < targetRtp) {
-      // Se RTP atual está abaixo do target, aumentar chances de ganhar
-      rtpMultiplier = 1.2;
-    } else if (currentRtp > targetRtp) {
-      // Se RTP atual está acima do target, diminuir chances de ganhar
-      rtpMultiplier = 0.8;
-    }
-
-    // Multiplicador adicional para usuários influenciadores
+    // Usuário comum sempre perde (0% de chance)
+    let chanceGanhar = 0;
+    
+    // Influenciador tem 80% de chance de ganhar (mais ganhos que perdas)
     if (user && user.is_influencer) {
-      // Aumentar significativamente as chances de ganhar para influenciadores
-      rtpMultiplier *= 6;
+      chanceGanhar = 40; // 80% de chance para influenciadores
     }
 
     // Gerar número aleatório de 0 a 100
     const randomNumber = Math.random() * 100;
-    let cumulativeProbability = 0;
+    
+    // Se o número for maior que a chance de ganhar, perde
+    if (randomNumber > chanceGanhar) {
+      return { isWinner: false, prize: null };
+    }
 
-    // Verificar cada prêmio em ordem de probabilidade
+    // Se ganhou, determinar qual prêmio baseado nas probabilidades relativas
+    let cumulativeProbability = 0;
+    const totalProbability = prizes.reduce((sum, prize) => sum + Number(prize.probability), 0);
+
+    // Gerar segundo número aleatório para escolher o prêmio
+    const prizeRandomNumber = Math.random() * totalProbability;
+
     for (const prize of prizes) {
-      const adjustedProbability = Number(prize.probability) * rtpMultiplier;
-      cumulativeProbability += adjustedProbability;
+      cumulativeProbability += Number(prize.probability);
       
-      if (randomNumber <= cumulativeProbability) {
+      if (prizeRandomNumber <= cumulativeProbability) {
         return { isWinner: true, prize };
       }
     }
 
-    // Se não ganhou nenhum prêmio
-    return { isWinner: false, prize: null };
+    // Fallback: retornar o primeiro prêmio se algo der errado
+    return { isWinner: true, prize: prizes[0] };
   }
 
   // Buscar estatísticas de uma raspadinha
@@ -446,6 +451,125 @@ class ScratchCardService {
       return result;
     } catch (error) {
       throw new Error(`Erro ao criar raspadinha: ${error.message}`);
+    }
+  }
+
+  /**
+   * Criar raspadinha com múltiplos prêmios e upload de imagens para o Supabase
+   * @param {Object} scratchCardData - Dados da raspadinha
+   * @param {Array} prizesData - Array de prêmios
+   * @param {Object} files - Arquivos de imagem (scratchCardImage, prizeImages)
+   * @returns {Promise<Object>} Resultado da criação
+   */
+  async createScratchCardWithPrizesAndImages(scratchCardData, prizesData, files) {
+    try {
+      const bucket = process.env.SUPABASE_BUCKET;
+      if (!bucket) throw new Error('Bucket do Supabase não configurado');
+
+      // Validações de negócio (sem validar image_url obrigatório)
+      this.validateScratchCardDataForImageUpload(scratchCardData);
+      this.validatePrizesDataForImageUpload(prizesData);
+
+      // Função auxiliar para upload de imagem
+      const uploadAndGetUrl = async (file, folder) => {
+        if (!file) return null;
+        
+        const fs = require('fs').promises;
+        const filePath = `scratchcards/${folder}/${Date.now()}-${file.originalname}`;
+        
+        // Lê o buffer do arquivo salvo localmente
+        const buffer = await fs.readFile(file.path);
+        
+        const { error } = await supabase.storage.from(bucket).upload(filePath, buffer, {
+          contentType: file.mimetype,
+          upsert: true
+        });
+        
+        if (error) throw new Error(`Erro ao fazer upload de ${folder}: ${error.message}`);
+        
+        // URL pública
+        const { data } = supabase.storage.from(bucket).getPublicUrl(filePath);
+        return data.publicUrl;
+      };
+
+      // Upload da imagem da raspadinha
+      let scratchCardImageUrl = scratchCardData.image_url;
+      if (files.scratchCardImage) {
+        scratchCardImageUrl = await uploadAndGetUrl(files.scratchCardImage, 'cards');
+      }
+
+      // Upload das imagens dos prêmios
+      const updatedPrizesData = [...prizesData];
+      if (files.prizeImages && Array.isArray(files.prizeImages)) {
+        for (let i = 0; i < Math.min(files.prizeImages.length, updatedPrizesData.length); i++) {
+          const prizeImage = files.prizeImages[i];
+          if (prizeImage) {
+            const imageUrl = await uploadAndGetUrl(prizeImage, 'prizes');
+            updatedPrizesData[i].image_url = imageUrl;
+          }
+        }
+      }
+
+      // Atualizar dados da raspadinha com a URL da imagem
+      const finalScratchCardData = {
+        ...scratchCardData,
+        image_url: scratchCardImageUrl
+      };
+
+      // Criar raspadinha com as imagens processadas
+      const result = await prisma.$transaction(async (tx) => {
+        // Criar a raspadinha
+        const scratchCard = await tx.scratchCard.create({
+          data: {
+            name: finalScratchCardData.name,
+            description: finalScratchCardData.description,
+            price: Number(finalScratchCardData.price),
+            image_url: finalScratchCardData.image_url,
+            target_rtp: Number(finalScratchCardData.target_rtp),
+            is_active: finalScratchCardData.is_active !== undefined ? finalScratchCardData.is_active : true,
+            current_rtp: 0,
+            total_revenue: 0,
+            total_payouts: 0,
+            total_games_played: 0
+          }
+        });
+
+        // Criar os prêmios com as imagens processadas
+        const prizesWithScratchCardId = updatedPrizesData.map(prize => ({
+          scratchCardId: scratchCard.id,
+          name: prize.name,
+          description: prize.description || null,
+          type: prize.type,
+          value: prize.value ? Number(prize.value) : null,
+          product_name: prize.product_name || null,
+          redemption_value: prize.redemption_value ? Number(prize.redemption_value) : null,
+          image_url: prize.image_url || null,
+          probability: Number(prize.probability),
+          is_active: prize.is_active !== undefined ? prize.is_active : true
+        }));
+
+        await tx.prize.createMany({
+          data: prizesWithScratchCardId
+        });
+
+        // Buscar a raspadinha criada com os prêmios
+        const createdScratchCard = await tx.scratchCard.findUnique({
+          where: { id: scratchCard.id },
+          include: {
+            prizes: {
+              orderBy: {
+                probability: 'desc'
+              }
+            }
+          }
+        });
+
+        return createdScratchCard;
+      });
+
+      return result;
+    } catch (error) {
+      throw new Error(`Erro ao criar raspadinha com imagens: ${error.message}`);
     }
   }
 
@@ -710,6 +834,18 @@ class ScratchCardService {
     this.validateTargetRtp(data.target_rtp);
   }
 
+  validateScratchCardDataForImageUpload(data) {
+    if (!data.name || data.name.trim().length < 3) {
+      throw new Error('Nome da raspadinha deve ter pelo menos 3 caracteres');
+    }
+    if (!data.description || data.description.trim().length < 10) {
+      throw new Error('Descrição da raspadinha deve ter pelo menos 10 caracteres');
+    }
+    // Não validar image_url obrigatório para upload de imagem
+    this.validatePrice(data.price);
+    this.validateTargetRtp(data.target_rtp);
+  }
+
   validatePrizesData(prizes) {
     if (!Array.isArray(prizes) || prizes.length === 0) {
       throw new Error('Deve haver pelo menos um prêmio');
@@ -729,6 +865,25 @@ class ScratchCardService {
     }
   }
 
+  validatePrizesDataForImageUpload(prizes) {
+    if (!Array.isArray(prizes) || prizes.length === 0) {
+      throw new Error('Deve haver pelo menos um prêmio');
+    }
+    if (prizes.length > 20) {
+      throw new Error('Máximo de 20 prêmios por raspadinha');
+    }
+
+    let totalProbability = 0;
+    for (const prize of prizes) {
+      this.validatePrizeDataForImageUpload(prize);
+      totalProbability += Number(prize.probability);
+    }
+
+    if (totalProbability > 100) {
+      throw new Error('Soma das probabilidades não pode exceder 100%');
+    }
+  }
+
   validatePrizeData(prize) {
     if (!prize.name || prize.name.trim().length < 2) {
       throw new Error('Nome do prêmio deve ter pelo menos 2 caracteres');
@@ -740,6 +895,29 @@ class ScratchCardService {
     if (prize.image_url && !this.isValidUrl(prize.image_url)) {
       throw new Error('URL da imagem do prêmio deve ser válida');
     }
+
+    if (prize.type === 'MONEY') {
+      if (!prize.value || Number(prize.value) <= 0) {
+        throw new Error('Prêmios em dinheiro devem ter valor maior que zero');
+      }
+    } else if (prize.type === 'PRODUCT') {
+      if (!prize.product_name || prize.product_name.trim().length < 2) {
+        throw new Error('Produtos devem ter nome do produto');
+      }
+      if (!prize.redemption_value || Number(prize.redemption_value) <= 0) {
+        throw new Error('Produtos devem ter valor de resgate maior que zero');
+      }
+    }
+  }
+
+  validatePrizeDataForImageUpload(prize) {
+    if (!prize.name || prize.name.trim().length < 2) {
+      throw new Error('Nome do prêmio deve ter pelo menos 2 caracteres');
+    }
+    this.validatePrizeType(prize.type);
+    this.validateProbability(prize.probability);
+
+    // Não validar image_url obrigatório para upload de imagem
 
     if (prize.type === 'MONEY') {
       if (!prize.value || Number(prize.value) <= 0) {

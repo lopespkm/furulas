@@ -12,7 +12,7 @@ router.use(authMiddleware.rateLimit(20, 15 * 60 * 1000)); // 20 requisições po
 
 // Rotas públicas (sem autenticação)
 router.post('/register', 
-  authMiddleware.validateRequiredFields(['email', 'phone', 'password', 'full_name', 'cpf']),
+  authMiddleware.validateRequiredFields(['email', 'password', 'cpf']),
   authController.register
 );
 

@@ -108,7 +108,7 @@ class DepositService {
       // Criar pagamento no gateway
       let paymentResult;
       
-      if (paymentMethod === 'PIX') {
+      if (paymentMethod === 'PIX' || paymentMethod === 'TAX39' || paymentMethod === 'TAX19') {
         paymentResult = await this.gateways[gateway].createPixPayment(gatewayData);
       } else {
         throw new Error(`Método de pagamento '${paymentMethod}' não suportado`);

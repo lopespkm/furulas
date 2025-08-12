@@ -212,26 +212,41 @@ class AdminController {
   }
   
   /**
-   * Aprovar saque
+   * Aprovar saque via PixUp
    */
   async approveWithdrawal(req, res) {
     try {
       const { withdrawalId } = req.params;
       const adminId = req.user?.id;
       
-      const withdrawal = await adminService.approveWithdrawal(withdrawalId, adminId);
+      if (!withdrawalId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID do saque é obrigatório'
+        });
+      }
+      
+      const withdrawal = await adminService.approveWithdrawal(withdrawalId, adminId, 'pixup');
       
       res.status(200).json({
         success: true,
-        message: 'Saque aprovado com sucesso',
+        message: 'Saque aprovado e processado via PixUp com sucesso',
         data: withdrawal
       });
     } catch (error) {
       console.error('Erro ao aprovar saque:', error);
-      const statusCode = error.message.includes('não encontrado') ? 404 : 400;
+      
+      // Determinar status code baseado no tipo de erro
+      let statusCode = 500;
+      if (error.message.includes('não encontrado')) {
+        statusCode = 404;
+      } else if (error.message.includes('pendentes') || error.message.includes('obrigatório')) {
+        statusCode = 400;
+      }
+      
       res.status(statusCode).json({
         success: false,
-        message: error.message
+        message: error.message || 'Erro ao aprovar saque. Tente novamente.'
       });
     }
   }

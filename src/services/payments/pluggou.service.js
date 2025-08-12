@@ -11,29 +11,59 @@ class PluggouService {
     }
 
     async initialize() {
-        if (this.client) return; // Já inicializado
-
+        // Sempre buscar as configurações mais recentes do banco
         const settings = await prisma.setting.findFirst();
         if (!settings) {
             throw new Error('Configurações não encontradas no banco de dados');
         }
 
-        this.baseURL = settings.pluggou_base_url;
-        this.apiKey = settings.pluggou_api_key;
-        this.organizationId = settings.pluggou_organization_id;
+        const newBaseURL = settings.pluggou_base_url;
+        const newApiKey = settings.pluggou_api_key;
+        const newOrganizationId = settings.pluggou_organization_id;
 
-        if (!this.apiKey) {
+        if (!newApiKey) {
             throw new Error('PLUGGOU_API_KEY não configurada nas configurações');
         }
 
-        this.client = axios.create({
-            baseURL: this.baseURL,
-            headers: {
-                'Content-Type': 'application/json',
-                'X-API-Key': this.apiKey
-            },
-            timeout: 30000
-        });
+        // Verificar se as configurações mudaram ou se o cliente não existe
+        const configChanged = 
+            this.baseURL !== newBaseURL ||
+            this.apiKey !== newApiKey ||
+            this.organizationId !== newOrganizationId ||
+            !this.client;
+
+        if (configChanged) {
+            console.log('🔄 Configurações Pluggou alteradas, recriando cliente...');
+            
+            // Atualizar as propriedades da instância
+            this.baseURL = newBaseURL;
+            this.apiKey = newApiKey;
+            this.organizationId = newOrganizationId;
+
+            // Recriar o cliente axios com as novas configurações
+            this.client = axios.create({
+                baseURL: this.baseURL,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': this.apiKey
+                },
+                timeout: 30000
+            });
+
+            console.log('✅ Cliente Pluggou recriado com sucesso');
+        }
+    }
+
+    /**
+     * Força a reinicialização do cliente (útil para testes ou quando há mudanças de configuração)
+     */
+    async forceReinitialize() {
+        console.log('🔄 Forçando reinicialização do cliente Pluggou...');
+        this.client = null;
+        this.baseURL = null;
+        this.apiKey = null;
+        this.organizationId = null;
+        await this.initialize();
     }
 
     /**

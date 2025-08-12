@@ -350,12 +350,10 @@ class AdminService {
   }
 
   /**
-   * Aprovar saque e processar pagamento via gateway (DigitoPay ou PixUp)
+   * Aprovar saque e processar pagamento via PixUp
    */
-  async approveWithdrawal(withdrawalId, adminId, gateway = 'pluggou') {
+  async approveWithdrawal(withdrawalId, adminId, gateway = 'pixup') {
     const pixupService = require('./payments/pixup.service');
-    const digitoService = require('./payments/digito.service');
-    const pluggouService = require('./payments/pluggou.service');
     
     return await prisma.$transaction(async (tx) => {
       // Buscar saque com dados do usuário
@@ -382,77 +380,52 @@ class AdminService {
         throw new Error('Apenas saques pendentes podem ser aprovados');
       }
 
+      // Validar dados obrigatórios
+      if (!withdrawal.pix_key) {
+        throw new Error('Chave PIX não informada no saque');
+      }
+
+      if (!withdrawal.pix_type) {
+        throw new Error('Tipo da chave PIX não informado no saque');
+      }
+
       try {
-        let paymentResponse;
-        let gatewayName;
+        // Processar pagamento via PixUp
+        const paymentData = {
+          amount: Number(withdrawal.amount),
+          description: `Saque aprovado - ${withdrawal.user.username}`,
+          external_id: withdrawal.id,
+          pixKey: withdrawal.pix_key,
+          recipientName: withdrawal.user.full_name || withdrawal.user.username,
+          keyType: withdrawal.pix_type,
+          taxId: withdrawal.document || withdrawal.user.cpf
+        };
 
-        if (gateway === 'digito') {
-          // Processar pagamento via DigitoPay
-          const paymentData = {
-            amount: Number(withdrawal.amount),
-            description: `Saque aprovado - ${withdrawal.user.username}`,
-            external_id: withdrawal.id,
-            pixKey: withdrawal.pix_key,
-            recipientName: withdrawal.user.full_name || withdrawal.user.username,
-            keyType: withdrawal.pix_type, // Tipo da chave PIX (CPF, CNPJ, EMAIL, PHONE, EVP)
-            taxId: withdrawal.document || withdrawal.user.cpf // CPF/CNPJ do destinatário
-          };
+        console.log('🔄 Processando saque via PixUp:', {
+          withdrawalId: withdrawal.id,
+          amount: withdrawal.amount,
+          pixKey: withdrawal.pix_key,
+          keyType: withdrawal.pix_type
+        });
 
-          paymentResponse = await digitoService.processPayment(paymentData);
-          gatewayName = 'DigitoPay';
-        } else if (gateway === 'pluggou') {
-          // Processar pagamento via Pluggou
-          const paymentData = {
-            amount: Number(withdrawal.amount),
-            description: `Saque aprovado - ${withdrawal.user.username}`,
-            pixKey: withdrawal.pix_key,
-            keyType: withdrawal.pix_type,
-          };
-
-          paymentResponse = await pluggouService.createPixCashOut(paymentData);
-          gatewayName = 'Pluggou';
-        } else {
-          // Processar pagamento via PixUp (fallback)
-          const paymentData = {
-            amount: Number(withdrawal.amount),
-            description: `Saque aprovado - ${withdrawal.user.username}`,
-            external_id: withdrawal.id,
-            pixKey: withdrawal.pix_key,
-            recipientName: withdrawal.user.full_name || withdrawal.user.username,
-            keyType: withdrawal.pix_type,
-            taxId: withdrawal.document || withdrawal.user.cpf
-          };
-
-          paymentResponse = await pixupService.processPayment(paymentData);
-          gatewayName = 'PixUp';
-        }
+        const paymentResponse = await pixupService.processPayment(paymentData);
 
         if (!paymentResponse.success) {
-          throw new Error(`Erro no ${gatewayName}: ${paymentResponse.error || 'Falha no processamento'}`);
+          const errorMsg = paymentResponse.error || 'Falha no processamento do pagamento';
+          console.error('❌ Erro na resposta do PixUp:', paymentResponse);
+          throw new Error(`Erro no PixUp: ${errorMsg}`);
         }
 
         // Atualizar saque com dados do pagamento
         const metadata = {
           ...withdrawal.metadata,
-          gateway: gateway,
+          gateway: 'pixup',
           approved_by: adminId,
-          approved_at: new Date()
+          approved_at: new Date(),
+          pixup_transaction_id: paymentResponse.pixupTransactionId,
+          pixup_response: paymentResponse.data,
+          pixup_status: paymentResponse.status
         };
-
-        // Adicionar dados específicos do gateway
-        if (gateway === 'digito') {
-          metadata.digito_transaction_id = paymentResponse.digitoTransactionId;
-          metadata.digito_response = paymentResponse.data;
-          metadata.digito_status = paymentResponse.status;
-        } else if (gateway === 'pluggou') {
-          metadata.pluggou_transaction_id = paymentResponse.transactionId;
-          metadata.pluggou_response = paymentResponse.data;
-          metadata.pluggou_status = paymentResponse.status;
-        } else {
-          metadata.pixup_transaction_id = paymentResponse.pixupTransactionId;
-          metadata.pixup_response = paymentResponse.data;
-          metadata.pixup_status = paymentResponse.status;
-        }
 
         const updatedWithdrawal = await tx.withdraw.update({
           where: { id: withdrawalId },
@@ -463,16 +436,16 @@ class AdminService {
           }
         });
 
-        console.log(`✅ Saque aprovado e pagamento processado via ${gatewayName}:`, {
+        console.log('✅ Saque aprovado e pagamento processado via PixUp:', {
           withdrawalId: withdrawal.id,
           userId: withdrawal.userId,
           amount: withdrawal.amount,
-          transactionId: gateway === 'digito' ? paymentResponse.digitoTransactionId : gateway === 'pluggou' ? paymentResponse.transactionId : paymentResponse.pixupTransactionId
+          transactionId: paymentResponse.pixupTransactionId
         });
 
         return updatedWithdrawal;
       } catch (paymentError) {
-        console.error(`❌ Erro ao processar pagamento ${gateway}:`, paymentError.message);
+        console.error('❌ Erro ao processar pagamento PixUp:', paymentError.message);
         
         // Atualizar saque com erro
         await tx.withdraw.update({
@@ -480,7 +453,7 @@ class AdminService {
           data: {
             metadata: {
               ...withdrawal.metadata,
-              [`${gateway}_error`]: paymentError.message,
+              pixup_error: paymentError.message,
               approval_failed_at: new Date(),
               approved_by: adminId
             }

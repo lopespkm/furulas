@@ -402,7 +402,7 @@ class ScratchCardController {
   }
 
   /**
-   * Criar nova raspadinha com múltiplos prêmios e upload de imagens
+   * Criar nova raspadinha com múltiplos prêmios e upload de imagens para o Supabase
    */
   async createScratchCard(req, res) {
     try {
@@ -461,8 +461,8 @@ class ScratchCardController {
         });
       }
 
-      // Validar campos obrigatórios da raspadinha
-      const requiredScratchCardFields = ['name', 'description', 'price', 'target_rtp', 'image_url'];
+      // Validar campos obrigatórios da raspadinha (removendo image_url da validação obrigatória)
+      const requiredScratchCardFields = ['name', 'description', 'price', 'target_rtp'];
       const missingScratchCardFields = requiredScratchCardFields.filter(field => !scratchCardData[field]);
       
       if (missingScratchCardFields.length > 0) {
@@ -472,18 +472,8 @@ class ScratchCardController {
         });
       }
 
-      // Validar se image_url é uma URL válida
-      try {
-        new URL(scratchCardData.image_url);
-      } catch {
-        return res.status(400).json({
-          success: false,
-          message: 'image_url deve ser uma URL válida'
-        });
-      }
-
-      // Validar campos obrigatórios dos prêmios
-      const requiredPrizeFields = ['name', 'description', 'type', 'probability', 'image_url'];
+      // Validar campos obrigatórios dos prêmios (removendo image_url da validação obrigatória)
+      const requiredPrizeFields = ['name', 'description', 'type', 'probability'];
       for (let i = 0; i < prizesData.length; i++) {
         const prize = prizesData[i];
         const missingPrizeFields = requiredPrizeFields.filter(field => !prize[field]);
@@ -492,16 +482,6 @@ class ScratchCardController {
           return res.status(400).json({
             success: false,
             message: `Campos obrigatórios do prêmio ${i + 1} ausentes: ${missingPrizeFields.join(', ')}`
-          });
-        }
-
-        // Validar se image_url do prêmio é uma URL válida
-        try {
-          new URL(prize.image_url);
-        } catch {
-          return res.status(400).json({
-            success: false,
-            message: `image_url do prêmio ${i + 1} deve ser uma URL válida`
           });
         }
 
@@ -529,7 +509,13 @@ class ScratchCardController {
         }
       }
 
-      const result = await scratchCardService.createScratchCardWithPrizes(scratchCardData, prizesData);
+      // Preparar dados para upload de imagens
+      const files = {
+        scratchCardImage: req.files?.scratchcard_image?.[0] || null,
+        prizeImages: req.files?.prize_images || []
+      };
+
+      const result = await scratchCardService.createScratchCardWithPrizesAndImages(scratchCardData, prizesData, files);
 
       res.status(201).json({
         success: true,

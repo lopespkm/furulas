@@ -17,11 +17,11 @@ datasource db {
 model User {
   id String @id @default(uuid())
   email String @unique
-  phone String @unique
+  phone String? @unique
   cpf String @unique
   username String @unique
   password String
-  full_name String
+  full_name String?
   is_admin Boolean @default(false)
   is_influencer Boolean @default(false)
   total_scratchs Int @default(0)

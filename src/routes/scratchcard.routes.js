@@ -26,7 +26,7 @@ router.get('/admin/all',   scratchCardController.getAllScratchCards);
 
 // Criar raspadinha com upload de imagens (multipart/form-data)
 router.post('/admin/create', 
-  uploadMiddleware.fields([
+  uploadMiddleware.fieldsWithDuplicates([
     { name: 'scratchcard_image', maxCount: 1 },
     { name: 'prize_images', maxCount: 10 }
   ]), 

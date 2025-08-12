@@ -13,11 +13,11 @@ class AuthController {
       console.log('Dados recebidos no registro:', { email, phone, cpf, full_name, invite_code });
 
       // Validações básicas
-      if (!email || !phone || !password || !full_name || !cpf) {
+      if (!email || !password || !cpf) {
         return res.status(400).json({
           success: false,
           message: 'Todos os campos obrigatórios devem ser preenchidos',
-          required_fields: ['email', 'phone', 'password', 'full_name', 'cpf']
+          required_fields: ['email', 'password', 'cpf']
         });
       }
 
@@ -29,8 +29,8 @@ class AuthController {
         });
       }
 
-      // Validar formato do telefone
-      if (!authService.validatePhone(phone)) {
+      // Validar formato do telefone (se fornecido)
+      if (phone && !authService.validatePhone(phone)) {
         return res.status(400).json({
           success: false,
           message: 'Formato de telefone inválido. Use o formato brasileiro (10 ou 11 dígitos)'

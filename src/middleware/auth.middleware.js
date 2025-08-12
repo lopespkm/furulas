@@ -290,6 +290,27 @@ class AuthMiddleware {
   errorHandler(error, req, res, next) {
     console.error('Erro global capturado:', error);
     
+    // Verificar se a resposta já foi enviada
+    if (res.headersSent) {
+      return next(error);
+    }
+    
+    // Erro de parsing JSON
+    if (error.type === 'entity.parse.failed' || error.message === 'JSON inválido') {
+      return res.status(400).json({
+        success: false,
+        message: 'JSON inválido'
+      });
+    }
+    
+    // Erro de validação do body-parser
+    if (error.type === 'entity.verify.failed') {
+      return res.status(400).json({
+        success: false,
+        message: 'Dados inválidos na requisição'
+      });
+    }
+    
     // Erro de validação do Prisma
     if (error.code === 'P2002') {
       return res.status(400).json({
@@ -307,7 +328,8 @@ class AuthMiddleware {
     }
     
     // Erro genérico
-    res.status(500).json({
+    const statusCode = error.status || error.statusCode || 500;
+    res.status(statusCode).json({
       success: false,
       message: process.env.NODE_ENV === 'production' 
         ? 'Erro interno do servidor' 

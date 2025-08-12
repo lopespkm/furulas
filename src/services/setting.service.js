@@ -15,9 +15,16 @@ class SettingService {
   async getSettings() {
     try {
       const settings = await prisma.setting.findMany();
+      
+      // Filtrar credenciais sensíveis antes de retornar
+      const filteredSettings = settings.map(setting => {
+        const { pluggou_api_key, pluggou_organization_id, ...publicSettings } = setting;
+        return publicSettings;
+      });
+      
       return {
         success: true,
-        data: settings,
+        data: filteredSettings,
         message: 'Configurações recuperadas com sucesso.'
       };
     } catch (error) {
